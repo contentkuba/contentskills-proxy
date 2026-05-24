@@ -1,5 +1,3 @@
-export const config = { runtime: "edge" };
-
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "*";
 
 const CORS_HEADERS = {
@@ -8,20 +6,24 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
-export default async function handler(req) {
+function setCors(res) {
+  Object.entries(CORS_HEADERS).forEach(([k, v]) => res.setHeader(k, v));
+}
+
+module.exports = async function handler(req, res) {
+  setCors(res);
+
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS_HEADERS });
+    return res.status(204).end();
   }
 
   if (req.method !== "POST") {
-    return new Response("Method not allowed", { status: 405, headers: CORS_HEADERS });
+    return res.status(405).send("Method not allowed");
   }
 
-  let body;
-  try {
-    body = await req.json();
-  } catch {
-    return new Response("Invalid JSON", { status: 400, headers: CORS_HEADERS });
+  let body = req.body;
+  if (!body || typeof body !== "object") {
+    return res.status(400).send("Invalid JSON");
   }
 
   const allowed = ["messages", "system", "max_tokens", "model"];
@@ -44,8 +46,6 @@ export default async function handler(req) {
 
   const data = await upstream.json();
 
-  return new Response(JSON.stringify(data), {
-    status: upstream.status,
-    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-  });
-}
+  res.setHeader("Content-Type", "application/json");
+  return res.status(upstream.status).json(data);
+};
