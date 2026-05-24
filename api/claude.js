@@ -10,6 +10,23 @@ function setCors(res) {
   Object.entries(CORS_HEADERS).forEach(([k, v]) => res.setHeader(k, v));
 }
 
+async function fetchWebsiteText(url) {
+  const res = await fetch(url, {
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; ContentSkillsBot/1.0)" },
+    signal: AbortSignal.timeout(7000),
+    redirect: "follow",
+  });
+  if (!res.ok) return null;
+  const html = await res.text();
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 2500);
+}
+
 module.exports = async function handler(req, res) {
   setCors(res);
 
@@ -33,6 +50,20 @@ module.exports = async function handler(req, res) {
 
   if (!payload.model) payload.model = "claude-sonnet-4-20250514";
   if (!payload.max_tokens) payload.max_tokens = 1000;
+
+  // Optional: inject scraped website content into system prompt
+  if (body.url_context && typeof body.url_context === "string") {
+    try {
+      const text = await fetchWebsiteText(body.url_context);
+      if (text) {
+        payload.system =
+          `[WEBSITE CONTEXT scraped from ${body.url_context}]\n${text}\n[END WEBSITE CONTEXT]\n\n` +
+          (payload.system || "");
+      }
+    } catch (_) {
+      // Silently proceed without website context
+    }
+  }
 
   const upstream = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
